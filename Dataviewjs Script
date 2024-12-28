@@ -1,0 +1,200 @@
+```dataviewjs
+// OpenRouter API key
+const OPENROUTER_API_KEY = 'ADD YOUR API KEY';
+
+// Website Discovery Template
+const WEBSITE_TEMPLATE = `
+You are a Digital Explorer tasked with discovering unique, valuable websites. I want to expand my digital horizons beyond common mainstream sites.
+
+# REQUIREMENTS
+1. Focus Areas:
+   - Unique communities and subcultures
+   - Fascinating databases and archives
+   - Interactive art and experimental projects
+   - Weird and wonderful collections
+   - Citizen science and collaborative projects
+   - Alternative media and independent journalism
+   - Digital museums and virtual exhibitions
+   - Personal websites and unique blogs
+   - Interactive storytelling experiences
+   - Generative art and creative coding projects
+   - Internet archaeology and digital history
+   - Niche interest communities
+   - Experimental music and sound projects
+   - Interactive maps and geographic discoveries
+   - Unique data visualizations and infographic sites
+   - Online experiments and interactive experiences
+
+2. EXCLUDE:
+   - Mainstream social media platforms
+   - Common news websites
+   - Standard entertainment platforms
+   - Regular shopping sites
+   - Corporate websites
+   - Basic informational sites
+   - Common web tools
+   - Regular streaming platforms
+   - Standard blogging platforms
+   - Popular app websites
+
+3. Already Discovered Websites:
+{{discovered_sites}}
+
+# FORMAT RESPONSE AS:
+## [Website Name](URL)
+
+### What is it?
+[2-3 sentences describing the core purpose and unique value proposition]
+
+### Why it's valuable:
+[3-4 key points about what makes this website special and how it can enhance digital life]
+
+### Best used for:
+[2-3 specific use cases or scenarios where this website excels]
+
+Pick ONE website that is not in the "Already Discovered" list. Ensure it's a legitimate, active website with unique value.`;
+
+// Function to get previously discovered websites
+async function getDiscoveredWebsites() {
+    const files = app.vault.getMarkdownFiles();
+    const discovered = [];
+    
+    for (const file of files) {
+        if (file.path.includes('Website Discovery')) {
+            const content = await app.vault.read(file);
+            const urlMatch = content.match(/\[(.*?)\]\((https?:\/\/[^\s\)]+)\)/);
+            if (urlMatch) {
+                discovered.push({
+                    name: urlMatch[1],
+                    url: urlMatch[2]
+                });
+            }
+        }
+    }
+    
+    return discovered;
+}
+
+// Function to fetch website suggestion
+async function fetchWebsiteSuggestion(discoveredSites) {
+    const sitesList = discoveredSites.map(site => `- ${site.name} (${site.url})`).join('\n');
+    const prompt = WEBSITE_TEMPLATE.replace('{{discovered_sites}}', sitesList);
+
+    try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                "model": "perplexity/llama-3.1-sonar-large-128k-online",
+                "messages": [
+                    { "role": "user", "content": prompt }
+                ],
+                "temperature": 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API request failed with status ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        return data.choices?.[0]?.message?.content?.trim() || 'No website suggestion found.';
+
+    } catch (error) {
+        console.error('Error fetching website suggestion:', error);
+        return `Error fetching website suggestion. Please check the console for details.`;
+    }
+}
+
+// Function to create the website discovery note
+async function createWebsiteDiscoveryNote() {
+    const today = window.moment().format('YYYY-MM-DD');
+    const discoveredSites = await getDiscoveredWebsites();
+    const suggestion = await fetchWebsiteSuggestion(discoveredSites);
+    
+    // Extract website name and URL from the suggestion
+    const websiteMatch = suggestion.match(/## \[(.*?)\]\((https?:\/\/[^\s\)]+)\)/);
+    if (!websiteMatch) {
+        new Notice('Error: Could not parse website suggestion.');
+        return;
+    }
+    
+    const websiteName = websiteMatch[1];
+    const noteTitle = `${today} - Website Discovery - ${websiteName}`;
+
+    const parentFile = app.workspace.getActiveFile();
+    if (!parentFile) {
+        new Notice('No active file found.');
+        return;
+    }
+
+    const folderPath = parentFile.parent ? parentFile.parent.path : '';
+    const filePath = folderPath ? `${folderPath}/${noteTitle}.md` : `${noteTitle}.md`;
+
+    const frontMatter = `---
+title: ${noteTitle}
+tags: website-discovery, digital-exploration
+date: ${today}
+---
+
+# ${noteTitle}
+Discovered on: ${window.moment().format('YYYY-MM-DD HH:mm')}
+\n`;
+
+    const noteContent = frontMatter + suggestion;
+
+    try {
+        await app.vault.create(filePath, noteContent);
+        new Notice(`Website discovery note for ${websiteName} has been created.`);
+    } catch (error) {
+        new Notice(`Error creating website discovery note. Check the console for details.`);
+        console.error(error);
+    }
+}
+
+// Function to render the website discovery button
+function renderWebsiteDiscoveryButton() {
+    const container = document.createElement('div');
+    container.style.margin = '10px 0';
+
+    const button = document.createElement('button');
+    button.textContent = '🌐 Discover New Website';
+    button.style.padding = '10px 20px';
+    button.style.backgroundColor = '#2196F3';
+    button.style.color = 'white';
+    button.style.border = 'none';
+    button.style.borderRadius = '5px';
+    button.style.cursor = 'pointer';
+    button.style.fontSize = '16px';
+
+    button.onmouseover = () => button.style.backgroundColor = '#1976D2';
+    button.onmouseout = () => button.style.backgroundColor = '#2196F3';
+
+    button.onclick = async () => {
+        button.disabled = true;
+        const originalText = button.textContent;
+        button.textContent = 'Exploring the Web...';
+        new Notice('🌐 Starting website discovery...');
+
+        try {
+            await createWebsiteDiscoveryNote();
+        } catch (error) {
+            console.error('Error generating website discovery:', error);
+            new Notice('🌐 Error occurred while discovering website.');
+        } finally {
+            button.textContent = originalText;
+            button.disabled = false;
+        }
+    };
+
+    container.appendChild(button);
+    dv.container.appendChild(container);
+}
+
+// Render the website discovery button
+renderWebsiteDiscoveryButton();
+```
